@@ -1,0 +1,236 @@
+---
+title: "Exploratory Analysis for TB Report Card"
+author: "Tampa Bay Estuary Program"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+    theme: cosmo
+    code-fold: true
+    code-tools:
+      source: https://github.com/tbep-tech/tampa-bay-report-card/blob/main/docs/exploratory.qmd
+toc: true
+lightbox: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+library(tbeptools)
+library(tidyverse)
+library(here)
+library(sf)
+source(here("R", "funcs.R"))
+
+```
+
+Indicators:
+* Water Quality
+    * chla, water clarity
+    * loading
+    * tidal creeks
+    * FIBs
+* Sediment
+    * TBBI/AMBI
+    * PEL/TEL
+* Fish/Wildlife
+    * TBNI
+    * Nonnatives
+* Habitat
+    * Seagrass
+    * LULC change/habitat report card
+
+```{r}
+# wq
+avedat <- anlz_avedat(epcdata)
+wqtarg <- avedat |>
+  anlz_attain() |>
+  separate(chl_la, into = c("chl", "la"), sep = "_") |> 
+  mutate(across(c(chl, la), as.numeric)) |>
+  mutate(
+    totsum = chl + la,
+    outcome = 1 - scales::rescale(totsum, to = c(0, 1))
+  )
+wqthrs <- avedat$ann |>
+    dplyr::left_join(targets, by = 'bay_segment') |>
+    dplyr::mutate(
+      bay_segment = factor(bay_segment, levels = c('OTB', 'HB', 'MTB', 'LTB')),
+      outcome = dplyr::case_when(
+        var == 'mean_chla' & val < chla_thresh ~ 1,
+        var == 'mean_chla' & val >= chla_thresh ~ 0,
+        var == 'mean_la' & val < la_thresh ~ 1,
+        var == 'mean_la' & val >= la_thresh ~ 0
+      )
+    ) |> 
+    select(yr, bay_segment, var, outcome)
+
+# loading
+totanndat <- rdataload("https://github.com/tbep-tech/load-estimates/raw/main/data/totanndat.RData")
+
+segcrsswk <- c(
+  'Old Tampa Bay' = 'OTB',
+  'Hillsborough Bay' = 'HB',
+  'Middle Tampa Bay' = 'MTB',
+  'Lower Tampa Bay' = 'LTB'
+)
+tntarg <- tibble(
+  bay_segment = factor(segcrsswk, levels = segcrsswk),
+  tn_load_thresh = c(486, 1451, 799, 349),
+  tnhy_thresh = c(1.08, 1.62, 1.24, 0.97)
+)
+tndat <- totanndat |>
+  filter(bay_segment %in% names(segcrsswk)) |>
+  mutate(bay_segment = factor(segcrsswk[bay_segment], levels = segcrsswk)) |>
+  select(year, bay_segment, tn_load, hy_load, tnhy) |>
+  left_join(tntarg, by = 'bay_segment') |>
+  mutate(
+    outcomeld = as.integer(tn_load > tn_load_thresh),
+    outcomehy = as.integer(tnhy > tnhy_thresh)
+  )
+
+# tidal creeks
+trnds <- tibble(
+    yrs = 1975:2024,
+  ) |> 
+  group_nest(yrs) |> 
+  mutate(
+    data = purrr::map(yrs, function(x){
+      # cat(x, '\t')
+      anlz_tdlcrk(tidalcreeks, iwrraw, yr = x)
+    }) 
+  )
+
+# assign each tidal creek to a bay segment based on the tbsegdetail
+# subwatershed it overlaps, using length of overlap to pick a segment for
+# creeks that span more than one subwatershed
+tcseg <- tidalcreeks |>
+  st_transform(st_crs(tbsegshed)) |>
+  select(id) |>
+  st_intersection(tbsegshed |> select(bay_segment)) |>
+  mutate(complen = st_length(geometry)) |>
+  st_drop_geometry() |>
+  group_by(id) |>
+  slice_max(complen, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  select(id, bay_segment)
+
+tctrnds <- trnds |>
+  unnest('data') |>
+  inner_join(tcseg, by = 'id')
+
+# condense the categorical creek scores into a single 0-1 value per bay
+# segment and year (1 = best); creeks with 'No Data' are dropped from the
+# calculation, and each creek record is weighted by its physical length so
+# longer creek segments contribute proportionally more to the segment score
+crkwts <- c(
+  'Prioritize'  = 0,
+  'Investigate' = 1/3,
+  'Caution'     = 2/3,
+  'Monitor'     = 1
+)
+
+tcscr <- tctrnds |>
+  left_join(
+    tidalcreeks |> st_drop_geometry() |> select(id, Creek_Length_m),
+    by = 'id'
+  ) |>
+  filter(score %in% names(crkwts)) |>
+  mutate(scoreval = crkwts[score]) |>
+  group_by(bay_segment, yrs) |>
+  summarise(
+    outcome = weighted.mean(scoreval, w = Creek_Length_m, na.rm = TRUE),
+    n_assessed = dplyr::n(),
+    .groups = 'drop'
+  )
+
+# fibs
+fibscr <- anlz_fibmatrix(enterodata, bay_segment = c('OTB', 'HB', 'MTB', 'LTB', 'BCB', 'MR')) |>
+  mutate(
+    outcome = case_when(
+      cat == 'E' ~ 0,
+      cat == 'D' ~ 1/4,
+      cat == 'C' ~ 2/4,
+      cat == 'B' ~ 3/4,
+      cat == 'A' ~ 1
+    )
+  )
+```
+
+```{r}
+# combine all water quality indicators into a single long-format object of
+# bay_segment, year, indicator, and a 0-1 outcome (1 = best). coverage of
+# bay segments and years differs by indicator, so this stacks the
+# indicators (bind_rows) rather than joining them - a segment/year missing
+# from an indicator's source data simply has no row for it, rather than an
+# NA-filled one. tn_load/hy_load are flipped (1 - outcomeld/outcomehy) so
+# 1 = attains target, matching the "1 = best" direction of every other
+# indicator here
+wqindic <- bind_rows(
+  wqtarg |>
+    transmute(
+      bay_segment = as.character(bay_segment),
+      yr = as.integer(yr),
+      indicator = 'wq_attain',
+      outcome
+    ),
+  wqthrs |>
+    filter(var %in% c('mean_chla', 'mean_la')) |>
+    transmute(
+      bay_segment = as.character(bay_segment),
+      yr = as.integer(yr),
+      indicator = recode(var, mean_chla = 'chla_thresh', mean_la = 'la_thresh'),
+      outcome
+    ),
+  tndat |>
+    transmute(
+      bay_segment = as.character(bay_segment),
+      yr = as.integer(year),
+      indicator = 'tn_load',
+      outcome = 1 - outcomeld
+    ),
+  tndat |>
+    transmute(
+      bay_segment = as.character(bay_segment),
+      yr = as.integer(year),
+      indicator = 'hy_load',
+      outcome = 1 - outcomehy
+    ),
+  tcscr |>
+    transmute(
+      bay_segment = as.character(bay_segment),
+      yr = as.integer(yrs),
+      indicator = 'tidal_creeks',
+      outcome
+    ),
+  fibscr |>
+    transmute(
+      bay_segment = as.character(grp),
+      yr = as.integer(yr),
+      indicator = 'fib',
+      outcome
+    )
+) |>
+  filter(!is.na(outcome))
+```
+
+```{r}
+# overall outcome by year and bay segment, averaged across whatever
+# indicators have data for that segment/year. Restricted to OTB, HB, MTB,
+# LTB (the four segments with the most complete indicator coverage) and to
+# 2000 onward - by 2000, wq_attain/chla_thresh/la_thresh (from 1972-1974)
+# and tn_load/hy_load (from 1985) are already available for all four
+# segments every year, and fib (starting 2002/2003) and tidal_creeks'
+# coverage of LTB (starting ~2005) both phase in shortly after. n_indicator
+# tracks how many of the (up to 7) indicators fed each average, since a few
+# early LTB years only have 5
+wqoverall <- wqindic |>
+  filter(bay_segment %in% c('OTB', 'HB', 'MTB', 'LTB'), yr >= 2000) |>
+  group_by(bay_segment, yr) |>
+  summarise(
+    outcome = mean(outcome, na.rm = TRUE),
+    n_indicator = dplyr::n(),
+    .groups = 'drop'
+  )
+```
