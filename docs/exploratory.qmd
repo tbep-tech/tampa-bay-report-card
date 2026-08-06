@@ -22,6 +22,8 @@ library(tbeptools)
 library(tidyverse)
 library(here)
 library(sf)
+library(plotly)
+library(jsonlite)
 source(here("R", "funcs.R"))
 
 ```
@@ -41,6 +43,8 @@ Indicators:
 * Habitat
     * Seagrass
     * LULC change/habitat report card
+
+## Water Quality
 
 ```{r}
 # wq
@@ -234,3 +238,349 @@ wqoverall <- wqindic |>
     .groups = 'drop'
   )
 ```
+
+```{r}
+# interactive "flower" plot for a single year: one polar bar (coxcomb)
+# chart per bay segment, arranged 2x2. Each equal-angle petal is a
+# component indicator (length/color = its 0-1 outcome) and the colored
+# center hole is that segment's overall wqoverall score - the petals give
+# context for what's driving the number in the middle. Any indicator
+# missing for a segment/year (none in 2025) renders as a short gray "No
+# data" petal rather than breaking the equal-angle layout
+plotyr <- 2024
+
+indic_labs <- c(
+  wq_attain    = 'WQ Attain',
+  chla_thresh  = 'Chl-a',
+  la_thresh    = 'Light',
+  tn_load      = 'TN Load',
+  hy_load      = 'Hydro',
+  tidal_creeks = 'Creeks',
+  fib          = 'FIB'
+)
+
+segorder <- c('OTB', 'HB', 'MTB', 'LTB')
+seglabs <- c(
+  OTB = 'Old Tampa Bay',
+  HB  = 'Hillsborough Bay',
+  MTB = 'Middle Tampa Bay',
+  LTB = 'Lower Tampa Bay'
+)
+
+# red -> orange -> yellow -> green, following the status palette used
+# elsewhere for condition/attainment (worst to best)
+colfun <- scales::col_numeric(
+  palette = c('#d03b3b', '#ec835a', '#fab219', '#0ca30c'),
+  domain  = c(0, 1)
+)
+nacolor <- '#c3c2b7'
+
+petalsyr <- wqindic |>
+  filter(yr == plotyr, bay_segment %in% segorder) |>
+  complete(bay_segment = segorder, indicator = names(indic_labs)) |>
+  mutate(
+    bay_segment   = factor(bay_segment, levels = segorder),
+    indicator_lab = factor(indic_labs[as.character(indicator)], levels = unname(indic_labs)),
+    r_plot        = ifelse(is.na(outcome), 1, outcome),
+    fillcolor     = ifelse(is.na(outcome), nacolor, colfun(outcome)),
+    opacity       = ifelse(is.na(outcome), 0.25, 0.92),
+    hovertext     = paste0(
+      seglabs[as.character(bay_segment)], '<br>',
+      indicator_lab, ': ',
+      ifelse(is.na(outcome), 'No data', scales::percent(outcome, accuracy = 1))
+    )
+  )
+
+centersyr <- wqoverall |>
+  filter(yr == plotyr, bay_segment %in% segorder) |>
+  mutate(bay_segment = factor(bay_segment, levels = segorder))
+
+# explicit 2x2 domains (rather than plotly::subplot()) so the center hole
+# size/position can be computed exactly for the score annotation below
+domains <- list(
+  OTB = list(x = c(0.04, 0.46), y = c(0.55, 1.00)),
+  HB  = list(x = c(0.54, 0.96), y = c(0.55, 1.00)),
+  MTB = list(x = c(0.04, 0.46), y = c(0.00, 0.45)),
+  LTB = list(x = c(0.54, 0.96), y = c(0.00, 0.45))
+)
+polarnames <- c(OTB = 'polar', HB = 'polar2', MTB = 'polar3', LTB = 'polar4')
+holefrac <- 0.34
+figw <- 900
+figh <- 840
+
+fig <- plot_ly(width = figw, height = figh)
+for (seg in segorder) {
+  dd <- petalsyr |> filter(bay_segment == seg) |> arrange(indicator)
+  fig <- fig |> add_trace(
+    data       = dd,
+    type       = 'barpolar',
+    r          = ~r_plot,
+    theta      = ~indicator_lab,
+    marker     = list(color = ~fillcolor, opacity = ~opacity, line = list(color = 'white', width = 1)),
+    subplot    = polarnames[[seg]],
+    text       = ~hovertext,
+    hoverinfo  = 'text',
+    showlegend = FALSE
+  )
+}
+
+polar_layout <- function(dom) list(
+  domain      = dom,
+  hole        = holefrac,
+  bgcolor     = 'rgba(0,0,0,0)',
+  radialaxis  = list(range = c(0, 1), showticklabels = FALSE, ticks = '', showline = FALSE, gridcolor = '#e1e0d9'),
+  angularaxis = list(rotation = 90, direction = 'clockwise', tickfont = list(size = 9, color = '#52514e'), gridcolor = '#e1e0d9')
+)
+
+shapes <- list()
+annos  <- list()
+for (seg in segorder) {
+  dom      <- domains[[seg]]
+  cx       <- mean(dom$x)
+  cy       <- mean(dom$y)
+  qw_px    <- (dom$x[2] - dom$x[1]) * figw
+  qh_px    <- (dom$y[2] - dom$y[1]) * figh
+  r_px     <- min(qw_px, qh_px) / 2 * holefrac
+  rx       <- r_px / figw
+  ry       <- r_px / figh
+  scoreval <- centersyr |> filter(bay_segment == seg) |> pull(outcome)
+  ccol     <- colfun(scoreval)
+
+  shapes[[length(shapes) + 1]] <- list(
+    type = 'circle', xref = 'paper', yref = 'paper',
+    x0 = cx - rx, x1 = cx + rx, y0 = cy - ry, y1 = cy + ry,
+    fillcolor = ccol, line = list(color = 'white', width = 2)
+  )
+  annos[[length(annos) + 1]] <- list(
+    x = cx, y = cy, xref = 'paper', yref = 'paper', xanchor = 'center', yanchor = 'middle',
+    text = paste0('<b>', scales::percent(scoreval, accuracy = 1), '</b>'),
+    showarrow = FALSE, font = list(size = 18, color = '#ffffff')
+  )
+  annos[[length(annos) + 1]] <- list(
+    x = cx, y = dom$y[2] + 0.015, xref = 'paper', yref = 'paper', xanchor = 'center', yanchor = 'bottom',
+    text = paste0('<b>', seglabs[[seg]], '</b>'),
+    showarrow = FALSE, font = list(size = 13, color = '#0b0b0b')
+  )
+}
+
+fig |>
+  layout(
+    title = list(text = paste('Bay Segment Indicator Scores —', plotyr), x = 0.5, font = list(size = 18)),
+    showlegend = FALSE,
+    polar  = polar_layout(domains$OTB),
+    polar2 = polar_layout(domains$HB),
+    polar3 = polar_layout(domains$MTB),
+    polar4 = polar_layout(domains$LTB),
+    shapes = shapes,
+    annotations = annos,
+    margin = list(t = 90, b = 20, l = 40, r = 40),
+    paper_bgcolor = '#fcfcfb'
+  )
+```
+
+## Sediment
+
+```{r}
+peltel <- tibble(
+    yr = 1993:2024,
+  ) |> 
+  group_nest(yrs) |> 
+  mutate(
+    data = purrr::map(yr, function(x){
+      anlz_sedimentpelave(sedimentdata, yrrng = x)
+    }) 
+  ) |> 
+  unnest('data') |> 
+  mutate(
+    grd = cut(ave, breaks = c(-Inf, 0.00756, 0.02052, 0.08567, 0.28026, Inf), labels = c('A', 'B', 'C', 'D', 'F')), 
+    outcome = case_when(
+      grd == 'A' ~ 1,
+      grd == 'B' ~ 0.75,
+      grd == 'C' ~ 0.5,
+      grd == 'D' ~ 0.25,
+      grd == 'F' ~ 0
+    )
+  ) |> 
+  select(yr, bay_segment, ave, grd, outcome)
+tbbi <- benthicdata |> 
+  anlz_tbbiscr() |> 
+  anlz_tbbimed() |> 
+  filter(!grepl('!All', bay_segment)) |> 
+  mutate(
+    outcome = case_when(
+      TBBICat == 'Poor' ~ 0,
+      TBBICat == 'Fair' ~ 0.5,
+      TBBICat == 'Good' ~ 1
+    )
+  ) |> 
+  select(yr, bay_segment, TBBICat, outcome)
+```
+
+## Fish/Wildlife
+
+
+```{r}
+tbni <- fimdata |> 
+  anlz_tbniscr() |> 
+  anlz_tbniave() |> 
+  mutate(
+    outcome = scales::rescale(Segment_TBNI, to = c(0, 1), from = c(0, 100))
+  )
+
+```
+
+### Nonnatives
+
+Ports the non-native species "report card" metrics from the
+[tbep-invasives](https://github.com/tbep-tech) Python pipeline
+(`src/tbep_invasives/steps/report_cards.py`) to R: non-native species
+abundance (observations per unit area per year) and richness (unique
+species per unit area per year) by bay segment, converted to percentiles.
+Numeric output only (no plot) - two tidy year x bay-segment data frames,
+`nonnative_abundance` and `nonnative_richness`.
+
+```{r}
+# raw occurrence data: USGS NAS API (9 HUC8 codes covering the Tampa Bay
+# area, from tbep-invasives/config/settings.yaml) + the Tampa Bay FIM
+# non-native dataset (an RData file - note the object stored inside is
+# named `inv`, not derived from the URL basename, so rdataload() doesn't
+# apply here)
+huc8_list <- c(
+  '03100101', '03100201', '03100202', '03100203',
+  '03100204', '03100205', '03100206', '03100207', '03100208'
+)
+
+fetch_nas_huc8 <- function(huc8) {
+  url <- paste0('https://nas.er.usgs.gov/api/v2/occurrence/search?huc8=', huc8)
+  res <- jsonlite::fromJSON(url, simplifyDataFrame = TRUE)
+  rows <- res$results
+  if (is.null(rows) || nrow(rows) == 0) return(NULL)
+  tibble(
+    scientificName = rows$scientificName,
+    commonName     = rows$commonName,
+    group          = rows$group,
+    year           = as.integer(rows$year),
+    lon            = as.numeric(rows$decimalLongitude),
+    lat            = as.numeric(rows$decimalLatitude)
+  )
+}
+
+nas_raw <- huc8_list |>
+  purrr::map(fetch_nas_huc8) |>
+  bind_rows() |>
+  mutate(source = 'NAS')
+
+fim_tf <- tempfile(fileext = '.RData')
+download.file(
+  'https://github.com/kflahertywalia/tb_fim_nonnatives/raw/refs/heads/main/Output/tb_fim_inv.RData',
+  fim_tf, mode = 'wb', quiet = TRUE
+)
+load(fim_tf)  # loads an object named `inv`
+
+fim_raw <- inv |>
+  transmute(
+    scientificName = Scientificname,
+    commonName     = Commonname,
+    group          = recode(Taxa_Type, Fish = 'Fishes', Turtle = 'Reptiles'),
+    year           = as.integer(substr(Reference, 4, 7)),
+    lon            = as.numeric(Longitude),
+    lat            = as.numeric(Latitude),
+    source         = 'FIM'
+  )
+
+# group name cleanup (matches download_invasives.py's group_name_changes),
+# keep only the same 7 taxonomic groups Python keeps
+group_name_changes <- c(
+  'Amphibians-Frogs'    = 'Amphibians',
+  'Crustaceans-Crabs'   = 'Crustaceans',
+  'Marine Fishes'       = 'Fishes',
+  'Mollusks-Bivalves'   = 'Mollusks',
+  'Mollusks-Gastropods' = 'Mollusks',
+  'Reptiles-Lizards'    = 'Reptiles',
+  'Reptiles-Snakes'     = 'Reptiles',
+  'Reptiles-Turtles'    = 'Reptiles'
+)
+keep_groups <- c('Amphibians', 'Crustaceans', 'Fishes', 'Mammals', 'Mollusks', 'Plants', 'Reptiles')
+
+nonnative_obs <- bind_rows(nas_raw, fim_raw) |>
+  mutate(group = ifelse(group %in% names(group_name_changes), group_name_changes[group], group)) |>
+  filter(group %in% keep_groups, year >= 2000, !is.na(lon), !is.na(lat))
+```
+
+```{r}
+# bay segment / AOI boundaries: shapefiles copied from the tbep-invasives
+# repo into data-raw/ (rather than read cross-repo) so segment grouping
+# ("Remainder Lower Tampa Bay" = Boca Ciega Bay + Manatee River + Terra
+# Ceia Bay) and areas match its report cards exactly
+invasives_shp_dir <- here('data-raw')
+
+aoi_shp    <- st_read(file.path(invasives_shp_dir, 'TBEP_AOI_4326.shp'), quiet = TRUE)
+bayseg_shp <- st_read(file.path(invasives_shp_dir, 'TBEP_Bay_Segments_4326.shp'), quiet = TRUE)
+
+nonnative_pts <- nonnative_obs |>
+  st_as_sf(coords = c('lon', 'lat'), crs = 4326, remove = FALSE) |>
+  st_filter(aoi_shp, .predicate = st_intersects) |>
+  st_join(bayseg_shp['BAY_SEG_GP'], join = st_within) |>
+  rename(baySegment = BAY_SEG_GP) |>
+  st_drop_geometry() |>
+  filter(!is.na(baySegment))
+
+# areas in sq mi, recomputed from geometry (EPSG:3086) to match
+# report_cards.py's calc_watershed_area()/calc_aoi_area() rather than
+# trusting the shapefile's static area_ac attribute (the two agree closely
+# where checked)
+bayseg_area_sqmi <- bayseg_shp |>
+  st_transform(3086) |>
+  group_by(BAY_SEG_GP) |>
+  summarise(geometry = st_union(geometry), .groups = 'drop') |>
+  mutate(area_sqmi = as.numeric(st_area(geometry)) / 4046.8564224 / 640) |>
+  st_drop_geometry() |>
+  deframe()
+
+aoi_area_sqmi <- sum(as.numeric(st_area(st_transform(aoi_shp, 3086)))) / 4046.8564224 / 640
+```
+
+```{r}
+# per-segment abundance/richness normalized by area, plus an "All" column
+# normalized by total AOI area - mirrors per_watershed_abundance(),
+# per_watershed_richness(), total_aoi_abundance(), total_aoi_richness()
+bay_seg_order <- c('Old Tampa Bay', 'Hillsborough Bay', 'Middle Tampa Bay', 'Lower Tampa Bay', 'Remainder Lower Tampa Bay')
+
+ws_abundance <- nonnative_pts |>
+  count(year, baySegment) |>
+  pivot_wider(names_from = baySegment, values_from = n, values_fill = 0) |>
+  select(year, all_of(bay_seg_order))
+ws_abundance[bay_seg_order] <- Map(`/`, ws_abundance[bay_seg_order], bayseg_area_sqmi[bay_seg_order])
+
+ws_richness <- nonnative_pts |>
+  distinct(year, baySegment, scientificName) |>
+  count(year, baySegment) |>
+  pivot_wider(names_from = baySegment, values_from = n, values_fill = 0) |>
+  select(year, all_of(bay_seg_order))
+ws_richness[bay_seg_order] <- Map(`/`, ws_richness[bay_seg_order], bayseg_area_sqmi[bay_seg_order])
+
+ws_abundance$All <- (nonnative_pts |> count(year) |> pull(n)) / aoi_area_sqmi
+ws_richness$All  <- (nonnative_pts |> distinct(year, scientificName) |> count(year) |> pull(n)) / aoi_area_sqmi
+
+# percentile transform: a single mean/sd across every cell of the whole
+# matrix (including "All"), matching as_percentile_by_mean_std() exactly
+as_percentile_by_mean_sd <- function(df) {
+  vals <- as.matrix(df[, setdiff(names(df), 'year')])
+  mu <- mean(vals, na.rm = TRUE)
+  sigma <- sd(vals, na.rm = TRUE)
+  pctl <- if (sigma <= 0 || is.na(sigma)) matrix(50, nrow(vals), ncol(vals)) else pnorm((vals - mu) / sigma) * 100
+  out <- as_tibble(pctl)
+  names(out) <- colnames(vals)
+  bind_cols(year = df$year, out)
+}
+
+nonnative_abundance <- as_percentile_by_mean_sd(ws_abundance)
+nonnative_richness  <- as_percentile_by_mean_sd(ws_richness)
+```
+
+## Notes
+
+* Indices that use categories from a continuous scale, revert to continuous data to get outcome
+* For TBNI, the scores range from 0-100 but the categories have breaks at 32 and 46, take this into consideration. 
+* For outcomes that are binary based on threshold, maybe use a sigmoidal conversion
+* Lots of redundancy in the water quality indicators
