@@ -21,7 +21,8 @@ Load an RData file from a URL
 Tries to load the file directly from \code{dataurl}. If that
 fails (e.g. the host doesn't support \code{url()} connections), falls
 back to downloading the file to a temporary location first, then loading
-it from there.
+it from there. The downloaded file is removed via \code{on.exit()} once
+the function returns, whether the fallback succeeds or fails.
 }
 \examples{
 \dontrun{

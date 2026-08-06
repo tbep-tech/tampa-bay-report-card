@@ -7,7 +7,8 @@
 #' @details Tries to load the file directly from \code{dataurl}. If that
 #' fails (e.g. the host doesn't support \code{url()} connections), falls
 #' back to downloading the file to a temporary location first, then loading
-#' it from there.
+#' it from there. The downloaded file is removed via \code{on.exit()} once
+#' the function returns, whether the fallback succeeds or fails.
 #'
 #' @returns The R object stored in the RData file.
 #'
@@ -32,10 +33,10 @@ util_rdataload <- function(dataurl = NULL) {
   # download x if load failed
   if (inherits(ld, 'try-error')) {
     fl <- paste(tempdir(), basename(dataurl), sep = '/')
+    on.exit(unlink(fl), add = TRUE)
     utils::download.file(dataurl, destfile = fl, quiet = TRUE)
     load(file = fl)
     out <- get(x)
-    suppressMessages(file.remove(fl))
   }
 
   return(out)
