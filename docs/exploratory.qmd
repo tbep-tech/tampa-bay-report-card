@@ -18,15 +18,9 @@ execute:
 ---
 
 ```{r}
-library(tbeptools)
+devtools::load_all(here::here())
 library(tidyverse)
-library(here)
-library(sf)
 library(plotly)
-library(jsonlite)
-source(here("R", "funcs.R"))
-
-load(file = here('data/sgsegest.RData'))
 ```
 
 Indicators:
@@ -48,196 +42,23 @@ Indicators:
 ## Water Quality
 
 ```{r}
-# wq
-avedat <- anlz_avedat(epcdata)
-wqtarg <- avedat |>
-  anlz_attain() |>
-  separate(chl_la, into = c("chl", "la"), sep = "_") |> 
-  mutate(across(c(chl, la), as.numeric)) |>
-  mutate(
-    totsum = chl + la,
-    outcome = 1 - scales::rescale(totsum, to = c(0, 1))
-  )
-wqthrs <- avedat$ann |>
-    dplyr::left_join(targets, by = 'bay_segment') |>
-    dplyr::mutate(
-      bay_segment = factor(bay_segment, levels = c('OTB', 'HB', 'MTB', 'LTB')),
-      outcome = dplyr::case_when(
-        var == 'mean_chla' & val < chla_thresh ~ 1,
-        var == 'mean_chla' & val >= chla_thresh ~ 0,
-        var == 'mean_la' & val < la_thresh ~ 1,
-        var == 'mean_la' & val >= la_thresh ~ 0
-      )
-    ) |> 
-    select(yr, bay_segment, var, outcome)
+wqattain <- anlz_wq_attain(epcdata)
+wqthresh <- anlz_wq_thresh(epcdata)
 
-# loading
-totanndat <- rdataload("https://github.com/tbep-tech/load-estimates/raw/main/data/totanndat.RData")
+totanndat <- util_rdataload("https://github.com/tbep-tech/load-estimates/raw/main/data/totanndat.RData")
+wqload <- anlz_wq_load(totanndat)
 
-segcrsswk <- c(
-  'Old Tampa Bay' = 'OTB',
-  'Hillsborough Bay' = 'HB',
-  'Middle Tampa Bay' = 'MTB',
-  'Lower Tampa Bay' = 'LTB'
-)
-tntarg <- tibble(
-  bay_segment = factor(segcrsswk, levels = segcrsswk),
-  tn_load_thresh = c(486, 1451, 799, 349),
-  tnhy_thresh = c(1.08, 1.62, 1.24, 0.97)
-)
-tndat <- totanndat |>
-  filter(bay_segment %in% names(segcrsswk)) |>
-  mutate(bay_segment = factor(segcrsswk[bay_segment], levels = segcrsswk)) |>
-  select(year, bay_segment, tn_load, hy_load, tnhy) |>
-  left_join(tntarg, by = 'bay_segment') |>
-  mutate(
-    outcomeld = as.integer(tn_load > tn_load_thresh),
-    outcomehy = as.integer(tnhy > tnhy_thresh)
-  )
+wqtidalcreeks <- anlz_wq_tidalcreeks(tidalcreeks, iwrraw, yrs = 1975:2024)
 
-# tidal creeks
-trnds <- tibble(
-    yrs = 1975:2024,
-  ) |> 
-  group_nest(yrs) |> 
-  mutate(
-    data = purrr::map(yrs, function(x){
-      # cat(x, '\t')
-      anlz_tdlcrk(tidalcreeks, iwrraw, yr = x)
-    }) 
-  )
-
-# assign each tidal creek to a bay segment based on the tbsegdetail
-# subwatershed it overlaps, using length of overlap to pick a segment for
-# creeks that span more than one subwatershed
-tcseg <- tidalcreeks |>
-  st_transform(st_crs(tbsegshed)) |>
-  select(id) |>
-  st_intersection(tbsegshed |> select(bay_segment)) |>
-  mutate(complen = st_length(geometry)) |>
-  st_drop_geometry() |>
-  group_by(id) |>
-  slice_max(complen, n = 1, with_ties = FALSE) |>
-  ungroup() |>
-  select(id, bay_segment)
-
-tctrnds <- trnds |>
-  unnest('data') |>
-  inner_join(tcseg, by = 'id')
-
-# condense the categorical creek scores into a single 0-1 value per bay
-# segment and year (1 = best); creeks with 'No Data' are dropped from the
-# calculation, and each creek record is weighted by its physical length so
-# longer creek segments contribute proportionally more to the segment score
-crkwts <- c(
-  'Prioritize'  = 0,
-  'Investigate' = 1/3,
-  'Caution'     = 2/3,
-  'Monitor'     = 1
-)
-
-tcscr <- tctrnds |>
-  left_join(
-    tidalcreeks |> st_drop_geometry() |> select(id, Creek_Length_m),
-    by = 'id'
-  ) |>
-  filter(score %in% names(crkwts)) |>
-  mutate(scoreval = crkwts[score]) |>
-  group_by(bay_segment, yrs) |>
-  summarise(
-    outcome = weighted.mean(scoreval, w = Creek_Length_m, na.rm = TRUE),
-    n_assessed = dplyr::n(),
-    .groups = 'drop'
-  )
-
-# fibs
-fibscr <- anlz_fibmatrix(enterodata, bay_segment = c('OTB', 'HB', 'MTB', 'LTB', 'BCB', 'MR')) |>
-  mutate(
-    outcome = case_when(
-      cat == 'E' ~ 0,
-      cat == 'D' ~ 1/4,
-      cat == 'C' ~ 2/4,
-      cat == 'B' ~ 3/4,
-      cat == 'A' ~ 1
-    )
-  )
+wqfib <- anlz_wq_fib(enterodata)
 ```
 
 ```{r}
-# combine all water quality indicators into a single long-format object of
-# bay_segment, year, indicator, and a 0-1 outcome (1 = best). coverage of
-# bay segments and years differs by indicator, so this stacks the
-# indicators (bind_rows) rather than joining them - a segment/year missing
-# from an indicator's source data simply has no row for it, rather than an
-# NA-filled one. tn_load/tnhy_load are flipped (1 - outcomeld/outcomehy) so
-# 1 = attains target, matching the "1 = best" direction of every other
-# indicator here
-wqindic <- bind_rows(
-  wqtarg |>
-    transmute(
-      bay_segment = as.character(bay_segment),
-      yr = as.integer(yr),
-      indicator = 'wq_attain',
-      outcome
-    ),
-  wqthrs |>
-    filter(var %in% c('mean_chla', 'mean_la')) |>
-    transmute(
-      bay_segment = as.character(bay_segment),
-      yr = as.integer(yr),
-      indicator = recode(var, mean_chla = 'chla_thresh', mean_la = 'la_thresh'),
-      outcome
-    ),
-  tndat |>
-    transmute(
-      bay_segment = as.character(bay_segment),
-      yr = as.integer(year),
-      indicator = 'tn_load',
-      outcome = 1 - outcomeld
-    ),
-  tndat |>
-    transmute(
-      bay_segment = as.character(bay_segment),
-      yr = as.integer(year),
-      indicator = 'tnhy_load',
-      outcome = 1 - outcomehy
-    ),
-  tcscr |>
-    transmute(
-      bay_segment = as.character(bay_segment),
-      yr = as.integer(yrs),
-      indicator = 'tidal_creeks',
-      outcome
-    ),
-  fibscr |>
-    transmute(
-      bay_segment = as.character(grp),
-      yr = as.integer(yr),
-      indicator = 'fib',
-      outcome
-    )
-) |>
-  filter(!is.na(outcome))
+wqindic <- anlz_wq_indicators(wqattain, wqthresh, wqload, wqtidalcreeks, wqfib)
 ```
 
 ```{r}
-# overall outcome by year and bay segment, averaged across whatever
-# indicators have data for that segment/year. Restricted to OTB, HB, MTB,
-# LTB (the four segments with the most complete indicator coverage) and to
-# 2000 onward - by 2000, wq_attain/chla_thresh/la_thresh (from 1972-1974)
-# and tn_load/tnhy_load (from 1985) are already available for all four
-# segments every year, and fib (starting 2002/2003) and tidal_creeks'
-# coverage of LTB (starting ~2005) both phase in shortly after. n_indicator
-# tracks how many of the (up to 7) indicators fed each average, since a few
-# early LTB years only have 5
-wqoverall <- wqindic |>
-  filter(bay_segment %in% c('OTB', 'HB', 'MTB', 'LTB'), yr >= 2000) |>
-  group_by(bay_segment, yr) |>
-  summarise(
-    outcome = mean(outcome, na.rm = TRUE),
-    n_indicator = dplyr::n(),
-    .groups = 'drop'
-  )
+wqoverall <- anlz_wq_overall(wqindic)
 ```
 
 ```{r}
@@ -382,52 +203,15 @@ fig |>
 ## Sediment
 
 ```{r}
-peltel <- tibble(
-    yr = 1993:2024,
-  ) |> 
-  group_nest(yrs) |> 
-  mutate(
-    data = purrr::map(yr, function(x){
-      anlz_sedimentpelave(sedimentdata, yrrng = x)
-    }) 
-  ) |> 
-  unnest('data') |> 
-  mutate(
-    grd = cut(ave, breaks = c(-Inf, 0.00756, 0.02052, 0.08567, 0.28026, Inf), labels = c('A', 'B', 'C', 'D', 'F')), 
-    outcome = case_when(
-      grd == 'A' ~ 1,
-      grd == 'B' ~ 0.75,
-      grd == 'C' ~ 0.5,
-      grd == 'D' ~ 0.25,
-      grd == 'F' ~ 0
-    )
-  ) |> 
-  select(yr, bay_segment, ave, grd, outcome)
-tbbi <- benthicdata |> 
-  anlz_tbbiscr() |> 
-  anlz_tbbimed() |> 
-  filter(!grepl('!All', bay_segment)) |> 
-  mutate(
-    outcome = case_when(
-      TBBICat == 'Poor' ~ 0,
-      TBBICat == 'Fair' ~ 0.5,
-      TBBICat == 'Good' ~ 1
-    )
-  ) |> 
-  select(yr, bay_segment, TBBICat, outcome)
+peltel <- anlz_sed_peltel(sedimentdata, yrs = 1993:2024)
+tbbi <- anlz_sed_tbbi(benthicdata)
 ```
 
 ## Fish/Wildlife
 
 
 ```{r}
-tbni <- fimdata |> 
-  anlz_tbniscr() |> 
-  anlz_tbniave() |> 
-  mutate(
-    outcome = scales::rescale(Segment_TBNI, to = c(0, 1), from = c(0, 100))
-  )
-
+tbni <- anlz_fw_tbni(fimdata)
 ```
 
 ### Nonnatives
@@ -441,193 +225,16 @@ Numeric output only (no plot) - two tidy year x bay-segment data frames,
 `nonnative_abundance` and `nonnative_richness`.
 
 ```{r}
-# raw occurrence data: USGS NAS API (9 HUC8 codes covering the Tampa Bay
-# area, from tbep-invasives/config/settings.yaml) + the Tampa Bay FIM
-# non-native dataset (an RData file - note the object stored inside is
-# named `inv`, not derived from the URL basename, so rdataload() doesn't
-# apply here)
-huc8_list <- c(
-  '03100101', '03100201', '03100202', '03100203',
-  '03100204', '03100205', '03100206', '03100207', '03100208'
-)
-
-fetch_nas_huc8 <- function(huc8) {
-  url <- paste0('https://nas.er.usgs.gov/api/v2/occurrence/search?huc8=', huc8)
-  res <- jsonlite::fromJSON(url, simplifyDataFrame = TRUE)
-  rows <- res$results
-  if (is.null(rows) || nrow(rows) == 0) return(NULL)
-  tibble(
-    scientificName = rows$scientificName,
-    commonName     = rows$commonName,
-    group          = rows$group,
-    year           = as.integer(rows$year),
-    lon            = as.numeric(rows$decimalLongitude),
-    lat            = as.numeric(rows$decimalLatitude)
-  )
-}
-
-nas_raw <- huc8_list |>
-  purrr::map(fetch_nas_huc8) |>
-  bind_rows() |>
-  mutate(source = 'NAS')
-
-fim_tf <- tempfile(fileext = '.RData')
-download.file(
-  'https://github.com/kflahertywalia/tb_fim_nonnatives/raw/refs/heads/main/Output/tb_fim_inv.RData',
-  fim_tf, mode = 'wb', quiet = TRUE
-)
-load(fim_tf)  # loads an object named `inv`
-
-fim_raw <- inv |>
-  transmute(
-    scientificName = Scientificname,
-    commonName     = Commonname,
-    group          = recode(Taxa_Type, Fish = 'Fishes', Turtle = 'Reptiles'),
-    year           = as.integer(substr(Reference, 4, 7)),
-    lon            = as.numeric(Longitude),
-    lat            = as.numeric(Latitude),
-    source         = 'FIM'
-  )
-
-# group name cleanup (matches download_invasives.py's group_name_changes),
-# keep only the same 7 taxonomic groups Python keeps
-group_name_changes <- c(
-  'Amphibians-Frogs'    = 'Amphibians',
-  'Crustaceans-Crabs'   = 'Crustaceans',
-  'Marine Fishes'       = 'Fishes',
-  'Mollusks-Bivalves'   = 'Mollusks',
-  'Mollusks-Gastropods' = 'Mollusks',
-  'Reptiles-Lizards'    = 'Reptiles',
-  'Reptiles-Snakes'     = 'Reptiles',
-  'Reptiles-Turtles'    = 'Reptiles'
-)
-keep_groups <- c('Amphibians', 'Crustaceans', 'Fishes', 'Mammals', 'Mollusks', 'Plants', 'Reptiles')
-
-nonnative_obs <- bind_rows(nas_raw, fim_raw) |>
-  mutate(group = ifelse(group %in% names(group_name_changes), group_name_changes[group], group)) |>
-  filter(group %in% keep_groups, year >= 2000, !is.na(lon), !is.na(lat))
-```
-
-```{r}
-# bay segment / AOI boundaries: shapefiles copied from the tbep-invasives
-# repo (via data-raw/, converted to RData by R/dat_proc.R) so segment
-# grouping ("Remainder Lower Tampa Bay" = Boca Ciega Bay + Manatee River +
-# Terra Ceia Bay) and areas match its report cards exactly
-load(here('data/aoi_shp.RData'))
-load(here('data/bayseg_shp.RData'))
-
-nonnative_pts <- nonnative_obs |>
-  st_as_sf(coords = c('lon', 'lat'), crs = 4326, remove = FALSE) |>
-  st_filter(aoi_shp, .predicate = st_intersects) |>
-  st_join(bayseg_shp['BAY_SEG_GP'], join = st_within) |>
-  rename(baySegment = BAY_SEG_GP) |>
-  st_drop_geometry() |>
-  filter(!is.na(baySegment))
-
-# areas in sq mi, recomputed from geometry (EPSG:3086) to match
-# report_cards.py's calc_watershed_area()/calc_aoi_area() rather than
-# trusting the shapefile's static area_ac attribute (the two agree closely
-# where checked)
-bayseg_area_sqmi <- bayseg_shp |>
-  st_transform(3086) |>
-  group_by(BAY_SEG_GP) |>
-  summarise(geometry = st_union(geometry), .groups = 'drop') |>
-  mutate(area_sqmi = as.numeric(st_area(geometry)) / 4046.8564224 / 640) |>
-  st_drop_geometry() |>
-  deframe()
-
-aoi_area_sqmi <- sum(as.numeric(st_area(st_transform(aoi_shp, 3086)))) / 4046.8564224 / 640
-```
-
-```{r}
-# per-segment abundance/richness normalized by area, plus an "All" column
-# normalized by total AOI area - mirrors per_watershed_abundance(),
-# per_watershed_richness(), total_aoi_abundance(), total_aoi_richness()
-bay_seg_order <- c('Old Tampa Bay', 'Hillsborough Bay', 'Middle Tampa Bay', 'Lower Tampa Bay', 'Remainder Lower Tampa Bay')
-
-ws_abundance <- nonnative_pts |>
-  count(year, baySegment) |>
-  pivot_wider(names_from = baySegment, values_from = n, values_fill = 0) |>
-  select(year, all_of(bay_seg_order))
-ws_abundance[bay_seg_order] <- Map(`/`, ws_abundance[bay_seg_order], bayseg_area_sqmi[bay_seg_order])
-
-ws_richness <- nonnative_pts |>
-  distinct(year, baySegment, scientificName) |>
-  count(year, baySegment) |>
-  pivot_wider(names_from = baySegment, values_from = n, values_fill = 0) |>
-  select(year, all_of(bay_seg_order))
-ws_richness[bay_seg_order] <- Map(`/`, ws_richness[bay_seg_order], bayseg_area_sqmi[bay_seg_order])
-
-ws_abundance$All <- (nonnative_pts |> count(year) |> pull(n)) / aoi_area_sqmi
-ws_richness$All  <- (nonnative_pts |> distinct(year, scientificName) |> count(year) |> pull(n)) / aoi_area_sqmi
-
-# percentile transform: a single mean/sd across every cell of the whole
-# matrix (including "All"), matching as_percentile_by_mean_std() exactly
-as_percentile_by_mean_sd <- function(df) {
-  vals <- as.matrix(df[, setdiff(names(df), 'year')])
-  mu <- mean(vals, na.rm = TRUE)
-  sigma <- sd(vals, na.rm = TRUE)
-  pctl <- if (sigma <= 0 || is.na(sigma)) matrix(50, nrow(vals), ncol(vals)) else pnorm((vals - mu) / sigma) * 100
-  out <- as_tibble(pctl)
-  names(out) <- colnames(vals)
-  bind_cols(year = df$year, out)
-}
-
-seg_abbrev <- c(
-  'Old Tampa Bay'             = 'OTB',
-  'Hillsborough Bay'          = 'HB',
-  'Middle Tampa Bay'          = 'MTB',
-  'Lower Tampa Bay'           = 'LTB',
-  'Remainder Lower Tampa Bay' = 'RALTB'
-)
-
-# long format, bay segments abbreviated, "All" dropped (it's only needed
-# above to match the global mean/sd used in as_percentile_by_mean_sd()).
-# outcome reverses the percentile to a 0-1 scale where 1 = best, since
-# higher non-native abundance/richness is worse
-to_nonnative_outcome <- function(df) {
-  df |>
-    select(-All) |>
-    pivot_longer(-year, names_to = 'bay_segment', values_to = 'value') |>
-    mutate(
-      yr = as.integer(year),
-      bay_segment = seg_abbrev[bay_segment],
-      outcome = 1 - value / 100
-    ) |>
-    select(yr, bay_segment, value, outcome)
-}
-
-nonnative_abundance <- as_percentile_by_mean_sd(ws_abundance) |> to_nonnative_outcome()
-nonnative_richness  <- as_percentile_by_mean_sd(ws_richness) |> to_nonnative_outcome()
+nonnative_obs <- anlz_fw_nonnative_obs()
+nonnative_abundance <- anlz_fw_nonnative_abundance(nonnative_obs)
+nonnative_richness  <- anlz_fw_nonnative_richness(nonnative_obs)
 ```
 
 ## Habitat
 
 ```{r}
-# seagrass transects
-trnsct <- transect |> 
-  anlz_transectocc() |> 
-  anlz_transectave() |> 
-  filter(bay_segment != 'All') |> 
-  mutate(
-    outcome = scales::rescale(foest, to = c(0, 1), from = c(0, 100))
-  ) |> 
-  select(bay_segment, yr, foest, outcome)
-
-# seagrass coverage
-segtrgs <- tibble(
-  segment = factor(c(levels(sgsegest$segment))),
-  trgs = 1000 * c(11.1, 1.751, 9.4, 7.4, 8.8, 1.1, 0.449)
-)
-cov <- sgsegest |> 
-  left_join(segtrgs, by = c('segment')) |> 
-  mutate(
-    outcome = ifelse(acres >= trgs, 1, 0)
-  ) |> 
-  select(segment, yr = year, acres, outcome) |> 
-  complete(segment, yr = c(min(yr):2025)) |> 
-  fill(acres, .direction = 'down', .by = segment) |>
-  fill(outcome, .direction = 'down', .by = segment)
+trnsct <- anlz_hab_seagrass_transect(transect)
+cov <- anlz_hab_seagrass_coverage(sgsegest)
 ```
 
 ## Notes
