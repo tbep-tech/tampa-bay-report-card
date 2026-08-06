@@ -1,0 +1,20 @@
+#' Area of interest boundary for non-native species occurrence data
+#'
+#' @format An \code{sf} object (EPSG:4326, WGS 84) with 1 row and 3 columns:
+#' \describe{
+#'   \item{BAY_SEG}{chr, boundary name}
+#'   \item{area_ac}{numeric, area in acres}
+#'   \item{geometry}{polygon geometry}
+#' }
+#'
+#' @details The Tampa Bay area of interest polygon used to clip non-native
+#' species occurrence points to the area covered by the report card (see
+#' \code{anlz_nonnative_obs()}). Copied from the
+#' \href{https://github.com/tbep-tech}{tbep-invasives} repo
+#' (\code{input_data/shp/TBEP_AOI_4326.shp}).
+#'
+#' See \code{data-raw/aoi_shp.R} for construction.
+#'
+#' @examples
+#' aoi_shp
+"aoi_shp"

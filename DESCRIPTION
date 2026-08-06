@@ -1,0 +1,45 @@
+Package: tbepreport
+Title: Compile and Visualize Ecosystem Report Card Indicators for Tampa Bay
+Version: 0.0.0.9000
+Authors@R:
+    person(given = "Marcus",
+      family = "Beck",
+      role = c("aut", "cre"),
+      email = "mbeck@tbep.org",
+      comment = c(ORCID = "0000-0002-4996-0059")
+    )
+Description: Functions to calculate, combine, and visualize water quality,
+  sediment, fish/wildlife, and habitat indicators as bay segment "report card"
+  scores for the Tampa Bay Estuary Program.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+  R (>= 4.2)
+Imports:
+  dplyr,
+  here,
+  jsonlite,
+  plotly,
+  purrr,
+  scales,
+  sf,
+  stats,
+  tbeptools,
+  tibble,
+  tidyr,
+  utils
+LazyData: true
+LazyDataCompression: xz
+URL: <https://github.com/tbep-tech/tampa-bay-report-card>
+BugReports: https://github.com/tbep-tech/tampa-bay-report-card/issues
+Suggests:
+    knitr,
+    mockery,
+    quarto,
+    testthat (>= 3.0.0)
+SystemRequirements: GDAL (>= 2.0.0)
+Remotes:
+  tbep-tech/tbeptools
+Config/testthat/edition: 3

@@ -1,0 +1,36 @@
+url: https://tbep-tech.github.io/tampa-bay-report-card/
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github]
+
+articles:
+- title: Get Started
+  navbar: ~
+  contents:
+  - articles/tbepreport
+
+reference:
+- title: Analyze data
+  desc: |
+    Functions for converting raw data to indicator outcomes, and for
+    combining indicators into bay segment scores.
+  contents: starts_with('anlz')
+- title: Show results
+  desc: |
+    Functions to visualize indicator scores.
+  contents: starts_with('show')
+- title: Internal datasets
+  desc: |
+    Supporting datasets used by the other functions.
+  contents:
+  - -starts_with('anlz')
+  - -starts_with('show')
+  - -starts_with('util')
+- title: Utility functions
+  desc: |
+    Utility functions used by other functions or standalone.
+  contents: starts_with('util')

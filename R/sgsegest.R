@@ -1,0 +1,20 @@
+#' Seagrass coverage estimates by bay segment and year
+#'
+#' @format A \code{data.frame} with 126 rows and 3 columns:
+#' \describe{
+#'   \item{segment}{Factor with 7 levels, the bay segment name (e.g.
+#'     "Old Tampa Bay")}
+#'   \item{acres}{numeric, estimated seagrass coverage in acres}
+#'   \item{year}{numeric, year of the estimate}
+#' }
+#'
+#' @details Seagrass coverage estimates by bay segment, sourced from the
+#' \href{https://github.com/tbep-tech/seagrass-analysis}{seagrass-analysis}
+#' pipeline. Used in \code{anlz_seagrass_coverage()} to compare estimated
+#' coverage against bay segment targets.
+#'
+#' See \code{data-raw/sgsegest.R} for construction.
+#'
+#' @examples
+#' sgsegest
+"sgsegest"
