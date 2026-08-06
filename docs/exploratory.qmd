@@ -26,6 +26,7 @@ library(plotly)
 library(jsonlite)
 source(here("R", "funcs.R"))
 
+load(file = here('data/sgsegest.RData'))
 ```
 
 Indicators:
@@ -509,13 +510,11 @@ nonnative_obs <- bind_rows(nas_raw, fim_raw) |>
 
 ```{r}
 # bay segment / AOI boundaries: shapefiles copied from the tbep-invasives
-# repo into data-raw/ (rather than read cross-repo) so segment grouping
-# ("Remainder Lower Tampa Bay" = Boca Ciega Bay + Manatee River + Terra
-# Ceia Bay) and areas match its report cards exactly
-invasives_shp_dir <- here('data-raw')
-
-aoi_shp    <- st_read(file.path(invasives_shp_dir, 'TBEP_AOI_4326.shp'), quiet = TRUE)
-bayseg_shp <- st_read(file.path(invasives_shp_dir, 'TBEP_Bay_Segments_4326.shp'), quiet = TRUE)
+# repo (via data-raw/, converted to RData by R/dat_proc.R) so segment
+# grouping ("Remainder Lower Tampa Bay" = Boca Ciega Bay + Manatee River +
+# Terra Ceia Bay) and areas match its report cards exactly
+load(here('data/aoi_shp.RData'))
+load(here('data/bayseg_shp.RData'))
 
 nonnative_pts <- nonnative_obs |>
   st_as_sf(coords = c('lon', 'lat'), crs = 4326, remove = FALSE) |>
@@ -574,8 +573,61 @@ as_percentile_by_mean_sd <- function(df) {
   bind_cols(year = df$year, out)
 }
 
-nonnative_abundance <- as_percentile_by_mean_sd(ws_abundance)
-nonnative_richness  <- as_percentile_by_mean_sd(ws_richness)
+seg_abbrev <- c(
+  'Old Tampa Bay'             = 'OTB',
+  'Hillsborough Bay'          = 'HB',
+  'Middle Tampa Bay'          = 'MTB',
+  'Lower Tampa Bay'           = 'LTB',
+  'Remainder Lower Tampa Bay' = 'RALTB'
+)
+
+# long format, bay segments abbreviated, "All" dropped (it's only needed
+# above to match the global mean/sd used in as_percentile_by_mean_sd()).
+# outcome reverses the percentile to a 0-1 scale where 1 = best, since
+# higher non-native abundance/richness is worse
+to_nonnative_outcome <- function(df) {
+  df |>
+    select(-All) |>
+    pivot_longer(-year, names_to = 'bay_segment', values_to = 'value') |>
+    mutate(
+      yr = as.integer(year),
+      bay_segment = seg_abbrev[bay_segment],
+      outcome = 1 - value / 100
+    ) |>
+    select(yr, bay_segment, value, outcome)
+}
+
+nonnative_abundance <- as_percentile_by_mean_sd(ws_abundance) |> to_nonnative_outcome()
+nonnative_richness  <- as_percentile_by_mean_sd(ws_richness) |> to_nonnative_outcome()
+```
+
+## Habitat
+
+```{r}
+# seagrass transects
+trnsct <- transect |> 
+  anlz_transectocc() |> 
+  anlz_transectave() |> 
+  filter(bay_segment != 'All') |> 
+  mutate(
+    outcome = scales::rescale(foest, to = c(0, 1), from = c(0, 100))
+  ) |> 
+  select(bay_segment, yr, foest, outcome)
+
+# seagrass coverage
+segtrgs <- tibble(
+  segment = factor(c(levels(sgsegest$segment))),
+  trgs = 1000 * c(11.1, 1.751, 9.4, 7.4, 8.8, 1.1, 0.449)
+)
+cov <- sgsegest |> 
+  left_join(segtrgs, by = c('segment')) |> 
+  mutate(
+    outcome = ifelse(acres >= trgs, 1, 0)
+  ) |> 
+  select(segment, yr = year, acres, outcome) |> 
+  complete(segment, yr = c(min(yr):2025)) |> 
+  fill(acres, .direction = 'down', .by = segment) |>
+  fill(outcome, .direction = 'down', .by = segment)
 ```
 
 ## Notes
@@ -584,3 +636,4 @@ nonnative_richness  <- as_percentile_by_mean_sd(ws_richness)
 * For TBNI, the scores range from 0-100 but the categories have breaks at 32 and 46, take this into consideration. 
 * For outcomes that are binary based on threshold, maybe use a sigmoidal conversion
 * Lots of redundancy in the water quality indicators
+* How to incorporate land use change by bay segment? Is this even appropriate?
