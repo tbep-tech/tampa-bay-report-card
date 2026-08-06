@@ -169,7 +169,7 @@ fibscr <- anlz_fibmatrix(enterodata, bay_segment = c('OTB', 'HB', 'MTB', 'LTB', 
 # bay segments and years differs by indicator, so this stacks the
 # indicators (bind_rows) rather than joining them - a segment/year missing
 # from an indicator's source data simply has no row for it, rather than an
-# NA-filled one. tn_load/hy_load are flipped (1 - outcomeld/outcomehy) so
+# NA-filled one. tn_load/tnhy_load are flipped (1 - outcomeld/outcomehy) so
 # 1 = attains target, matching the "1 = best" direction of every other
 # indicator here
 wqindic <- bind_rows(
@@ -199,7 +199,7 @@ wqindic <- bind_rows(
     transmute(
       bay_segment = as.character(bay_segment),
       yr = as.integer(year),
-      indicator = 'hy_load',
+      indicator = 'tnhy_load',
       outcome = 1 - outcomehy
     ),
   tcscr |>
@@ -225,7 +225,7 @@ wqindic <- bind_rows(
 # indicators have data for that segment/year. Restricted to OTB, HB, MTB,
 # LTB (the four segments with the most complete indicator coverage) and to
 # 2000 onward - by 2000, wq_attain/chla_thresh/la_thresh (from 1972-1974)
-# and tn_load/hy_load (from 1985) are already available for all four
+# and tn_load/tnhy_load (from 1985) are already available for all four
 # segments every year, and fib (starting 2002/2003) and tidal_creeks'
 # coverage of LTB (starting ~2005) both phase in shortly after. n_indicator
 # tracks how many of the (up to 7) indicators fed each average, since a few
@@ -255,7 +255,7 @@ indic_labs <- c(
   chla_thresh  = 'Chl-a',
   la_thresh    = 'Light',
   tn_load      = 'TN Load',
-  hy_load      = 'Hydro',
+  tnhy_load    = 'Hydro',
   tidal_creeks = 'Creeks',
   fib          = 'FIB'
 )

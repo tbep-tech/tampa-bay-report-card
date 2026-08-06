@@ -16,17 +16,18 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends:
-  R (>= 4.2)
+  R (>= 4.2),
+  tbeptools
 Imports:
   dplyr,
   here,
   jsonlite,
   plotly,
   purrr,
+  rlang,
   scales,
   sf,
   stats,
-  tbeptools,
   tibble,
   tidyr,
   utils
