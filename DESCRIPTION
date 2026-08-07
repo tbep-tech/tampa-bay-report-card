@@ -44,3 +44,4 @@ SystemRequirements: GDAL (>= 2.0.0)
 Remotes:
   tbep-tech/tbeptools
 Config/testthat/edition: 3
+VignetteBuilder: quarto

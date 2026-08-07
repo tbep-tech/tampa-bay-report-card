@@ -1,25 +1,25 @@
 ---
 title: "Exploratory Analysis for TB Report Card"
 author: "Tampa Bay Estuary Program"
-date: "`r Sys.Date()`"
-format:
-  html:
-    embed-resources: true
-    theme: cosmo
-    code-fold: true
-    code-tools:
-      source: https://github.com/tbep-tech/tbepreport/blob/main/docs/exploratory.qmd
-toc: true
-lightbox: true
-execute:
-  echo: true
-  warning: false
-  message: false
+vignette: >
+  %\VignetteIndexEntry{exploratory}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+knitr:
+  opts_chunk:
+    collapse: true
+    comment: '#>'
+    echo: true
+    warning: false
+    message: false
 ---
 
 ```{r}
-devtools::load_all(here::here())
-library(tidyverse)
+#| label: setup
+#| include: false
+library(tbepreport)
+library(dplyr)
+library(tidyr)
 library(plotly)
 ```
 

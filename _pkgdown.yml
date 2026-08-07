@@ -11,7 +11,11 @@ articles:
 - title: Get Started
   navbar: ~
   contents:
-  - articles/tbepreport
+  - tbepreport
+- title: Articles
+  navbar: ~
+  contents:
+  - exploratory
 
 reference:
 - title: Analyze data

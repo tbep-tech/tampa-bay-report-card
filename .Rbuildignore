@@ -8,4 +8,5 @@
 ^codecov\.yml$
 ^data-raw$
 ^\.claude$
-^vignettes/articles$
+^vignettes/\.quarto$
+^vignettes/*_files$

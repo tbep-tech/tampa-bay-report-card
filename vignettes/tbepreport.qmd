@@ -1,0 +1,25 @@
+---
+title: "Getting Started"
+vignette: >
+  %\VignetteIndexEntry{tbepreport}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+knitr:
+  opts_chunk:
+    collapse: true
+    comment: '#>'
+---
+
+```{r}
+#| label: setup
+#| include: false
+#| message: false
+#| warning: false
+library(tbepreport)
+```
+
+This article is a placeholder for the `tbepreport` package walkthrough - a
+shortened version of the working prototype in the
+[Exploratory Analysis](exploratory.html) article. It will be filled in as
+the indicator functions listed in the package's development plan are
+ported.
