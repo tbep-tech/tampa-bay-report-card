@@ -8,7 +8,7 @@ format:
     theme: cosmo
     code-fold: true
     code-tools:
-      source: https://github.com/tbep-tech/tampa-bay-report-card/blob/main/docs/exploratory.qmd
+      source: https://github.com/tbep-tech/tbepreport/blob/main/docs/exploratory.qmd
 toc: true
 lightbox: true
 execute:
