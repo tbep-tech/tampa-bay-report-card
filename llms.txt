@@ -1,0 +1,114 @@
+# tbepreport
+
+R package for compiling and visualizing an integrated ecosystem health
+report card for Tampa Bay.
+
+## Installation
+
+Install the development version from
+[GitHub](https://github.com/tbep-tech/tbepreport):
+
+``` r
+
+# install.packages("remotes")
+remotes::install_github("tbep-tech/tbepreport")
+
+library(tbepreport)
+```
+
+## Issues and suggestions
+
+Please report any issues and suggestions on the [issues
+link](https://github.com/tbep-tech/tbepreport/issues) for the
+repository.
+
+# Package index
+
+## Analyze data
+
+Functions for converting raw data to indicator outcomes, and for
+combining indicators into bay segment scores.
+
+- [`anlz_fw_nonnative_abundance()`](https://tbep-tech.github.io/tbepreport/reference/anlz_fw_nonnative_abundance.md)
+  : Non-native species abundance outcome by bay segment and year
+- [`anlz_fw_nonnative_obs()`](https://tbep-tech.github.io/tbepreport/reference/anlz_fw_nonnative_obs.md)
+  : Non-native species occurrence points, clipped and assigned to a bay
+  segment
+- [`anlz_fw_nonnative_richness()`](https://tbep-tech.github.io/tbepreport/reference/anlz_fw_nonnative_richness.md)
+  : Non-native species richness outcome by bay segment and year
+- [`anlz_fw_tbni()`](https://tbep-tech.github.io/tbepreport/reference/anlz_fw_tbni.md)
+  : Tampa Bay Nekton Index (TBNI) outcome by bay segment and year
+- [`anlz_hab_seagrass_coverage()`](https://tbep-tech.github.io/tbepreport/reference/anlz_hab_seagrass_coverage.md)
+  : Seagrass coverage outcome by bay segment and year
+- [`anlz_hab_seagrass_transect()`](https://tbep-tech.github.io/tbepreport/reference/anlz_hab_seagrass_transect.md)
+  : Seagrass transect frequency of occurrence outcome by bay segment and
+  year
+- [`anlz_sed_peltel()`](https://tbep-tech.github.io/tbepreport/reference/anlz_sed_peltel.md)
+  : Sediment quality (PEL/TEL) outcome by bay segment and year
+- [`anlz_sed_tbbi()`](https://tbep-tech.github.io/tbepreport/reference/anlz_sed_tbbi.md)
+  : Benthic index (TBBI) outcome by bay segment and year
+- [`anlz_wq_attain()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_attain.md)
+  : Water quality attainment outcome by bay segment and year
+- [`anlz_wq_fib()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_fib.md)
+  : Fecal indicator bacteria (FIB) outcome by bay segment and year
+- [`anlz_wq_indicators()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_indicators.md)
+  : Combine water quality indicators into a single long-format table
+- [`anlz_wq_load()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_load.md)
+  : Nutrient loading outcome by bay segment, year, and indicator
+- [`anlz_wq_overall()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_overall.md)
+  : Overall water quality outcome by bay segment and year
+- [`anlz_wq_thresh()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_thresh.md)
+  : Water quality threshold attainment outcome by bay segment, year, and
+  variable
+- [`anlz_wq_tidalcreeks()`](https://tbep-tech.github.io/tbepreport/reference/anlz_wq_tidalcreeks.md)
+  : Tidal creek condition outcome by bay segment and year
+
+## Show results
+
+Functions to visualize indicator scores.
+
+## Internal datasets
+
+Supporting datasets used by the other functions.
+
+- [`aoi_shp`](https://tbep-tech.github.io/tbepreport/reference/aoi_shp.md)
+  : Area of interest boundary for non-native species occurrence data
+- [`bayseg_shp`](https://tbep-tech.github.io/tbepreport/reference/bayseg_shp.md)
+  : Bay segment boundaries for non-native species occurrence data
+- [`sgsegest`](https://tbep-tech.github.io/tbepreport/reference/sgsegest.md)
+  : Seagrass coverage estimates by bay segment and year
+
+## Utility functions
+
+Utility functions used by other functions or standalone.
+
+- [`util_fw_fetch_fim()`](https://tbep-tech.github.io/tbepreport/reference/util_fw_fetch_fim.md)
+  : Fetch the Tampa Bay FIM non-native species dataset
+- [`util_fw_fetch_nas()`](https://tbep-tech.github.io/tbepreport/reference/util_fw_fetch_nas.md)
+  : Fetch USGS NAS non-native species occurrences for a set of HUC8
+  watersheds
+- [`util_fw_nonnative_areas()`](https://tbep-tech.github.io/tbepreport/reference/util_fw_nonnative_areas.md)
+  : Bay segment and AOI areas for non-native species density
+  calculations
+- [`util_fw_nonnative_long()`](https://tbep-tech.github.io/tbepreport/reference/util_fw_nonnative_long.md)
+  : Reshape a non-native metric's wide year-by-segment table to long
+  format
+- [`util_outcome()`](https://tbep-tech.github.io/tbepreport/reference/util_outcome.md)
+  : Convert raw indicator values to a 0-1 outcome score
+- [`util_percentile()`](https://tbep-tech.github.io/tbepreport/reference/util_percentile.md)
+  : Convert a wide data frame of values to percentiles by mean and
+  standard deviation
+- [`util_rdataload()`](https://tbep-tech.github.io/tbepreport/reference/util_rdataload.md)
+  : Load an RData file from a URL
+
+# Articles
+
+### Get Started
+
+- [Getting
+  Started](https://tbep-tech.github.io/tbepreport/articles/tbepreport.md):
+
+### Articles
+
+- [Exploratory Analysis for TB Report
+  Card](https://tbep-tech.github.io/tbepreport/articles/exploratory.md):
