@@ -7,5 +7,6 @@
 ^pkgdown$
 ^codecov\.yml$
 ^data-raw$
+^dev$
 ^\.claude$
 ^vignettes/articles$
